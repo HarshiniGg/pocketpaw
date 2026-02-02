@@ -48,6 +48,7 @@ htmlcov/
 
 # Docs (internal/draft)
 docs/
+.claude 
 
 # Config (contains secrets)
 .env
@@ -59,3 +60,5 @@ docs/
 # Build artifacts
 *.pyc
 *.pyo
+
+temp

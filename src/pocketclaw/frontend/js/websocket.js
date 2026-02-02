@@ -161,10 +161,12 @@ class PocketPawSocket {
         this.send('chat', { message });
     }
 
-    saveSettings(agentBackend, llmProvider) {
+    saveSettings(agentBackend, llmProvider, anthropicModel, bypassPermissions) {
         this.send('settings', {
             agent_backend: agentBackend,
-            llm_provider: llmProvider
+            llm_provider: llmProvider,
+            anthropic_model: anthropicModel,
+            bypass_permissions: bypassPermissions
         });
     }
 

@@ -1,4 +1,7 @@
-"""Open Interpreter agent wrapper."""
+"""Open Interpreter agent wrapper.
+
+Changes: 2026-02-02 - Added executor layer logging for architecture visibility.
+"""
 
 import asyncio
 import logging
@@ -10,7 +13,13 @@ logger = logging.getLogger(__name__)
 
 
 class OpenInterpreterAgent:
-    """Wraps Open Interpreter for autonomous task execution."""
+    """Wraps Open Interpreter for autonomous task execution.
+    
+    In the Agent SDK architecture, this serves as the EXECUTOR layer:
+    - Executes code and system commands
+    - Handles file operations
+    - Provides sandboxed execution environment
+    """
     
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -62,7 +71,10 @@ class OpenInterpreterAgent:
             interpreter.safe_mode = "ask"  # Will still ask before dangerous ops
             
             self._interpreter = interpreter
-            logger.info("✅ Open Interpreter initialized")
+            logger.info("=" * 50)
+            logger.info("🔧 EXECUTOR: Open Interpreter initialized")
+            logger.info("   └─ Role: Code execution, file ops, system commands")
+            logger.info("=" * 50)
             
         except ImportError:
             logger.error("❌ Open Interpreter not installed. Run: pip install open-interpreter")

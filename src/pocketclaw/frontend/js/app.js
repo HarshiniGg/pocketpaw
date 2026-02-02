@@ -1,6 +1,14 @@
 /**
  * PocketPaw Main Application
  * Alpine.js component for the dashboard
+ *
+ * Changes (2026-02-02):
+ * - Fixed auto-scroll: Added scrollToBottom() method with requestAnimationFrame
+ * - Streaming scroll: Now scrolls during streaming content updates
+ * - Simplified: Removed 2-layer mode
+ * - Added: PocketPaw Native backend (brain + OI hands)
+ * - Updated: Default backend is now claude_agent_sdk (recommended)
+ * - Added: getBackendDescription() for settings UI
  */
 
 function app() {
@@ -42,7 +50,7 @@ function app() {
         fileError: null,
         
         // Agent state
-        agentActive: false,
+        agentActive: true,
         isStreaming: false,
         streamingContent: '',
         streamingMessageId: null,
@@ -63,15 +71,19 @@ function app() {
         
         // Settings
         settings: {
-            agentBackend: 'open_interpreter',
-            llmProvider: 'auto'
+            agentBackend: 'claude_agent_sdk',  // Default: Claude Agent SDK (recommended)
+            llmProvider: 'auto',
+            anthropicModel: 'claude-sonnet-4-5-20250929',
+            bypassPermissions: false
         },
         
-        // API Keys (not persisted client-side)
+        // API Keys (not persisted client-side, but we track if saved on server)
         apiKeys: {
             anthropic: '',
             openai: ''
         },
+        hasAnthropicKey: false,
+        hasOpenaiKey: false,
 
         /**
          * Initialize the app
@@ -103,8 +115,14 @@ function app() {
             
             const onConnected = () => {
                 this.log('Connected to PocketPaw Engine', 'success');
-                // Fetch initial status
+                // Fetch initial status and settings
                 socket.runTool('status');
+                socket.send('get_settings');
+                // Auto-activate agent mode
+                if (this.agentActive) {
+                    socket.toggleAgent(true);
+                    this.log('Agent Mode auto-activated', 'info');
+                }
             };
             
             socket.on('connected', onConnected);
@@ -127,6 +145,7 @@ function app() {
             socket.on('stream_start', () => this.startStreaming());
             socket.on('stream_end', () => this.endStreaming());
             socket.on('files', (data) => this.handleFiles(data));
+            socket.on('settings', (data) => this.handleSettings(data));
 
             // Reminder handlers
             socket.on('reminders', (data) => this.handleReminders(data));
@@ -172,20 +191,22 @@ function app() {
          */
         handleMessage(data) {
             const content = data.content || '';
-            
+
             // Check if it's a status update (don't show in chat)
             if (content.includes('System Status') || content.includes('🧠 CPU:')) {
                 this.status = Tools.parseStatus(content);
                 return;
             }
-            
+
             // Handle streaming vs complete messages
             if (this.isStreaming) {
                 this.streamingContent += content;
+                // Scroll during streaming to follow new content
+                this.$nextTick(() => this.scrollToBottom());
             } else {
                 this.addMessage('assistant', content);
             }
-            
+
             this.log(content.substring(0, 80) + (content.length > 80 ? '...' : ''), 'info');
         },
 
@@ -195,6 +216,40 @@ function app() {
         handleStatus(data) {
             if (data.content) {
                 this.status = Tools.parseStatus(data.content);
+            }
+        },
+
+        /**
+         * Handle settings from server (on connect)
+         */
+        handleSettings(data) {
+            if (data.content) {
+                const serverSettings = data.content;
+                // Apply server settings to frontend state
+                if (serverSettings.agentBackend) {
+                    this.settings.agentBackend = serverSettings.agentBackend;
+                }
+                if (serverSettings.llmProvider) {
+                    this.settings.llmProvider = serverSettings.llmProvider;
+                }
+                if (serverSettings.anthropicModel) {
+                    this.settings.anthropicModel = serverSettings.anthropicModel;
+                }
+                if (serverSettings.bypassPermissions !== undefined) {
+                    this.settings.bypassPermissions = serverSettings.bypassPermissions;
+                }
+                // Store API key availability (for UI feedback)
+                this.hasAnthropicKey = serverSettings.hasAnthropicKey || false;
+                this.hasOpenaiKey = serverSettings.hasOpenaiKey || false;
+
+                // Log agent status if available (for debugging)
+                if (serverSettings.agentStatus) {
+                    const status = serverSettings.agentStatus;
+                    this.log(`Agent: ${status.backend} (available: ${status.available})`, 'info');
+                    if (status.features && status.features.length > 0) {
+                        this.log(`Features: ${status.features.join(', ')}`, 'info');
+                    }
+                }
             }
         },
 
@@ -331,13 +386,24 @@ function app() {
                 content,
                 time: Tools.formatTime()
             });
-            
-            // Auto scroll to bottom
+
+            // Auto scroll to bottom with slight delay for DOM update
             this.$nextTick(() => {
-                if (this.$refs.messages) {
-                    this.$refs.messages.scrollTop = this.$refs.messages.scrollHeight;
-                }
+                this.scrollToBottom();
             });
+        },
+
+        /**
+         * Scroll chat to bottom
+         */
+        scrollToBottom() {
+            const el = this.$refs.messages;
+            if (el) {
+                // Use requestAnimationFrame for smoother scrolling
+                requestAnimationFrame(() => {
+                    el.scrollTop = el.scrollHeight;
+                });
+            }
         },
 
         /**
@@ -774,7 +840,12 @@ function app() {
          * Save settings
          */
         saveSettings() {
-            socket.saveSettings(this.settings.agentBackend, this.settings.llmProvider);
+            socket.saveSettings(
+                this.settings.agentBackend, 
+                this.settings.llmProvider, 
+                this.settings.anthropicModel,
+                this.settings.bypassPermissions
+            );
             this.log('Settings updated', 'info');
             this.showToast('Settings saved', 'success');
         },
@@ -834,6 +905,30 @@ function app() {
          */
         formatMessage(content) {
             return Tools.formatMessage(content);
+        },
+
+        /**
+         * Get friendly label for current agent mode (shown in top bar)
+         */
+        getAgentModeLabel() {
+            const labels = {
+                'claude_agent_sdk': '🚀 Claude SDK',
+                'pocketpaw_native': '🐾 PocketPaw',
+                'open_interpreter': '🤖 Open Interpreter'
+            };
+            return labels[this.settings.agentBackend] || this.settings.agentBackend;
+        },
+
+        /**
+         * Get description for each backend (shown in settings)
+         */
+        getBackendDescription(backend) {
+            const descriptions = {
+                'claude_agent_sdk': 'Built-in tools: Bash, WebSearch, WebFetch, Read, Write, Edit, Glob, Grep',
+                'pocketpaw_native': 'Anthropic API + Open Interpreter executor. Direct subprocess for speed.',
+                'open_interpreter': 'Standalone agent. Works with local LLMs (Ollama) or cloud APIs.'
+            };
+            return descriptions[backend] || '';
         },
 
         /**

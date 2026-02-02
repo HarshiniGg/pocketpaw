@@ -1,6 +1,10 @@
 """PocketPaw Web Dashboard - API Server
 
 Lightweight FastAPI server that serves the frontend and handles WebSocket communication.
+
+Changes:
+  - 2026-02-02: Added agent status to get_settings response.
+  - 2026-02-02: Enhanced logging to show which backend is processing requests.
 """
 
 import asyncio
@@ -125,8 +129,8 @@ async def websocket_endpoint(websocket: WebSocket):
         "content": "👋 Connected to PocketPaw!"
     })
 
-    # Load settings
-    settings = Settings()
+    # Load settings from config file
+    settings = Settings.load()
     
     # State
     agent_active = False
@@ -147,8 +151,22 @@ async def websocket_endpoint(websocket: WebSocket):
             elif action == "toggle_agent":
                 agent_active = data.get("active", False)
                 
-                if agent_active and not agent_router:
-                    agent_router = AgentRouter(settings)
+                if agent_active:
+                    # Check if we need to recreate the router (new or backend changed)
+                    need_new_router = agent_router is None
+                    
+                    # Check if backend changed
+                    if agent_router and hasattr(agent_router, 'settings'):
+                        current_backend = getattr(agent_router.settings, 'agent_backend', None)
+                        if current_backend != settings.agent_backend:
+                            logger.info(f"🔄 Agent backend changed: {current_backend} → {settings.agent_backend}")
+                            need_new_router = True
+                    
+                    if need_new_router:
+                        agent_router = AgentRouter(settings)
+                        logger.info(f"🤖 Agent activated: backend={settings.agent_backend}, llm={settings.llm_provider}")
+                else:
+                    logger.info("🛑 Agent deactivated")
                 
                 await websocket.send_json({
                     "type": "notification",
@@ -161,10 +179,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 if agent_active and agent_router:
                     # Stream agent responses
+                    backend_name = settings.agent_backend
+                    logger.info(f"💬 [bold cyan]{backend_name}[/] → \"{message[:60]}{'...' if len(message) > 60 else ''}\"")
                     await websocket.send_json({"type": "stream_start"})
                     try:
                         async for chunk in agent_router.run(message):
                             await websocket.send_json(chunk)
+                    except Exception as e:
+                        logger.error(f"Agent error: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "content": f"Agent Error: {str(e)}"
+                        })
                     finally:
                         await websocket.send_json({"type": "stream_end"})
                 else:
@@ -179,6 +205,12 @@ async def websocket_endpoint(websocket: WebSocket):
                             "type": "message",
                             "content": response
                         })
+                    except Exception as e:
+                        logger.error(f"LLM chat error: {e}")
+                        await websocket.send_json({
+                            "type": "error",
+                            "content": f"LLM Error: {str(e)}"
+                        })
                     finally:
                         await websocket.send_json({"type": "stream_end"})
             
@@ -186,6 +218,10 @@ async def websocket_endpoint(websocket: WebSocket):
             elif action == "settings":
                 settings.agent_backend = data.get("agent_backend", settings.agent_backend)
                 settings.llm_provider = data.get("llm_provider", settings.llm_provider)
+                if data.get("anthropic_model"):
+                    settings.anthropic_model = data.get("anthropic_model")
+                if "bypass_permissions" in data:
+                    settings.bypass_permissions = bool(data.get("bypass_permissions"))
                 settings.save()
                 
                 # Reset routers to pick up new settings
@@ -227,6 +263,31 @@ async def websocket_endpoint(websocket: WebSocket):
                         "type": "error",
                         "content": "Invalid API key or provider"
                     })
+            
+            # Handle get_settings - return current settings to frontend
+            elif action == "get_settings":
+                # Get agent status if available
+                agent_status = None
+                if agent_router and hasattr(agent_router, '_agent'):
+                    try:
+                        if hasattr(agent_router._agent, 'get_status'):
+                            agent_status = await agent_router._agent.get_status()
+                    except Exception as e:
+                        logger.debug(f"Could not get agent status: {e}")
+
+                await websocket.send_json({
+                    "type": "settings",
+                    "content": {
+                        "agentBackend": settings.agent_backend,
+                        "llmProvider": settings.llm_provider,
+                        "anthropicModel": settings.anthropic_model,
+                        "bypassPermissions": settings.bypass_permissions,
+                        "hasAnthropicKey": bool(settings.anthropic_api_key),
+                        "hasOpenaiKey": bool(settings.openai_api_key),
+                        "agentActive": agent_active,
+                        "agentStatus": agent_status,
+                    }
+                })
             
             # Handle file navigation (legacy)
             elif action == "navigate":
