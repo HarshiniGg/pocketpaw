@@ -184,9 +184,9 @@ uv run ruff check .
 
 ## 🤝 Join the Pack
 
-- 🐦 Twitter: [@PocketPawAI](https://twitter.com/PocketPawAI)
+- 🐦 Twitter: [@PocketPawAI](https://twitter.com/PocketPaw89242)
 - 💬 Discord: [Coming Soon]
-- 📧 Email: hello@pocketpaw.ai
+- 📧 Email: pocketpawai@gmail.com
 
 PRs welcome! Let's build the future of personal AI together.
 
