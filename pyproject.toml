@@ -71,6 +71,12 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.8.0",
 ]
+memory = [
+    "mem0ai>=0.1.0",  # Semantic memory with vector search
+]
+all = [
+    "pocketpaw[memory]",
+]
 
 [project.scripts]
 pocketpaw = "pocketclaw.__main__:main"
