@@ -273,7 +273,11 @@ class FileMissionControlStore:
         tags: list[str] | None = None,
         limit: int = 100,
     ) -> list[Task]:
-        """List tasks with optional filters."""
+        """List tasks with optional filters.
+
+        Args:
+            limit: Max results. 0 means no limit.
+        """
         tasks = list(self._tasks.values())
 
         if status:
@@ -287,7 +291,7 @@ class FileMissionControlStore:
 
         # Sort by updated_at (most recent first)
         tasks.sort(key=lambda t: t.updated_at, reverse=True)
-        return tasks[:limit]
+        return tasks[:limit] if limit else tasks
 
     async def delete_task(self, task_id: str) -> bool:
         """Delete a task."""
