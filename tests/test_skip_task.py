@@ -33,6 +33,7 @@ def mock_manager():
     """Mock MissionControlManager for scheduler tests."""
     manager = AsyncMock()
     manager.list_tasks = AsyncMock(return_value=[])
+    manager.get_project_tasks = AsyncMock(return_value=[])
     manager.get_task = AsyncMock(return_value=None)
     manager.get_project = AsyncMock(return_value=None)
     manager.update_project = AsyncMock()
@@ -96,7 +97,7 @@ class TestSkippedUnblocksDependents:
             _make_task("t1", status=TaskStatus.SKIPPED),
             _make_task("t2", status=TaskStatus.INBOX, blocked_by=["t1"]),
         ]
-        mock_manager.list_tasks.return_value = tasks
+        mock_manager.get_project_tasks.return_value = tasks
 
         ready = await scheduler.get_ready_tasks("proj-1")
 
@@ -110,7 +111,7 @@ class TestSkippedUnblocksDependents:
             _make_task("t2", status=TaskStatus.SKIPPED),
             _make_task("t3", status=TaskStatus.INBOX, blocked_by=["t1", "t2"]),
         ]
-        mock_manager.list_tasks.return_value = tasks
+        mock_manager.get_project_tasks.return_value = tasks
 
         ready = await scheduler.get_ready_tasks("proj-1")
 
@@ -124,7 +125,7 @@ class TestSkippedUnblocksDependents:
             _make_task("t2", status=TaskStatus.IN_PROGRESS),
             _make_task("t3", status=TaskStatus.INBOX, blocked_by=["t1", "t2"]),
         ]
-        mock_manager.list_tasks.return_value = tasks
+        mock_manager.get_project_tasks.return_value = tasks
 
         ready = await scheduler.get_ready_tasks("proj-1")
 
@@ -146,7 +147,7 @@ class TestSkippedProjectCompletion:
         ]
 
         mock_manager.get_task.return_value = tasks[0]
-        mock_manager.list_tasks.return_value = tasks
+        mock_manager.get_project_tasks.return_value = tasks
         mock_manager.get_project.return_value = project
 
         await scheduler.on_task_completed("t1")
@@ -164,7 +165,7 @@ class TestSkippedProjectCompletion:
         ]
 
         mock_manager.get_task.return_value = tasks[0]
-        mock_manager.list_tasks.return_value = tasks
+        mock_manager.get_project_tasks.return_value = tasks
         mock_manager.get_project.return_value = project
 
         await scheduler.on_task_completed("t1")

@@ -15,6 +15,7 @@
 #
 # Mount: app.include_router(deep_work_router, prefix="/api/deep-work")
 
+import asyncio
 import logging
 from typing import Any
 
@@ -42,17 +43,40 @@ class StartDeepWorkRequest(BaseModel):
 async def start_deep_work(request: StartDeepWorkRequest) -> dict[str, Any]:
     """Submit a new project for Deep Work planning.
 
-    Creates a project, runs the planner (research -> PRD -> tasks -> team),
-    and returns the project in AWAITING_APPROVAL status.
+    Returns the project immediately in PLANNING status and runs the
+    planner in the background. Frontend tracks progress via WebSocket
+    events (dw_planning_phase, dw_planning_complete).
     """
-    from pocketclaw.deep_work import start_deep_work as _start
+    from pocketclaw.deep_work import get_deep_work_session
+    from pocketclaw.deep_work.models import ProjectStatus
+    from pocketclaw.mission_control.manager import get_mission_control_manager
 
-    try:
-        project = await _start(request.description, research_depth=request.research_depth)
-        return {"success": True, "project": project.to_dict()}
-    except Exception as e:
-        logger.exception(f"Deep Work start failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    manager = get_mission_control_manager()
+
+    # Create project immediately so we can return the ID
+    project = await manager.create_project(
+        title=request.description[:80],
+        description=request.description,
+        creator_id="human",
+    )
+    project.status = ProjectStatus.PLANNING
+    await manager.update_project(project)
+
+    # Run planning in background — frontend tracks via WebSocket events
+    async def _plan_in_background():
+        session = get_deep_work_session()
+        try:
+            await session.plan_existing_project(
+                project.id,
+                request.description,
+                research_depth=request.research_depth,
+            )
+        except Exception as e:
+            logger.exception(f"Background planning failed for {project.id}: {e}")
+
+    asyncio.create_task(_plan_in_background())
+
+    return {"success": True, "project": project.to_dict()}
 
 
 @router.get("/projects/{project_id}/plan")
@@ -169,7 +193,7 @@ async def skip_task(project_id: str, task_id: str) -> dict[str, Any]:
     task.status = TaskStatus.SKIPPED
     task.completed_at = now_iso()
     task.updated_at = now_iso()
-    await manager._store.save_task(task)
+    await manager.save_task(task)
 
     # Cascade: unblock dependents and check project completion
     try:

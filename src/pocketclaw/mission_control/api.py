@@ -704,9 +704,9 @@ async def mark_read(notification_id: str) -> SuccessResponse:
 
 def _get_project_dir(project_id: str) -> Any:
     """Get the project directory path."""
-    from pathlib import Path
+    from pocketclaw.mission_control.manager import get_project_dir
 
-    return Path.home() / ".pocketclaw" / "projects" / project_id
+    return get_project_dir(project_id)
 
 
 def _count_visible_files(directory: Any) -> int:
@@ -835,12 +835,15 @@ async def delete_project(project_id: str) -> SuccessResponse:
 
 @router.post("/projects/{project_id}/approve")
 async def approve_project(project_id: str) -> dict[str, Any]:
-    """Set a project's status to approved."""
+    """Approve a project (simple status change).
+
+    For full orchestration with task dispatch, use the Deep Work API
+    at POST /api/deep-work/projects/{id}/approve instead.
+    """
     from pocketclaw.deep_work.models import ProjectStatus
 
     manager = get_mission_control_manager()
     project = await manager.get_project(project_id)
-
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -851,12 +854,15 @@ async def approve_project(project_id: str) -> dict[str, Any]:
 
 @router.post("/projects/{project_id}/pause")
 async def pause_project(project_id: str) -> dict[str, Any]:
-    """Set a project's status to paused."""
+    """Pause a project (simple status change).
+
+    For full orchestration with task stopping, use the Deep Work API
+    at POST /api/deep-work/projects/{id}/pause instead.
+    """
     from pocketclaw.deep_work.models import ProjectStatus
 
     manager = get_mission_control_manager()
     project = await manager.get_project(project_id)
-
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -867,12 +873,15 @@ async def pause_project(project_id: str) -> dict[str, Any]:
 
 @router.post("/projects/{project_id}/resume")
 async def resume_project(project_id: str) -> dict[str, Any]:
-    """Set a project's status to executing."""
+    """Resume a project (simple status change).
+
+    For full orchestration with task dispatch, use the Deep Work API
+    at POST /api/deep-work/projects/{id}/resume instead.
+    """
     from pocketclaw.deep_work.models import ProjectStatus
 
     manager = get_mission_control_manager()
     project = await manager.get_project(project_id)
-
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
